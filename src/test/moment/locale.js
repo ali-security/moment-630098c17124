@@ -440,3 +440,48 @@ test('moment().lang with missing key doesn\'t change locale', function (assert) 
             'preserve global locale in case of bad locale id');
 });
 
+test('locale names that look like paths are not loaded', function (assert) {
+    var jan = moment([2000, 0]),
+        sentinel = 'S1_S2_S3_S4_S5_S6_S7_S8_S9_S10_S11_S12'.split('_'),
+        planted = ['uz', 'vi', 'tr', 'tzm', 'km'];
+
+    // Pre-define each target locale with sentinel month names. If a
+    // path-like locale name reaches require(), the real locale file at
+    // that path is executed, which redefines the locale and clobbers
+    // the sentinel.
+    each(planted, function (name) {
+        moment.defineLocale(name, {months : sentinel});
+    });
+    moment.locale('en');
+
+    function untouched(name) {
+        return moment.localeData(name).months(jan) === sentinel[0];
+    }
+
+    assert.equal(moment.locale('../locale/uz'), 'en', 'global setter ignores path-like locale');
+    assert.ok(untouched('uz'), 'global setter does not load ../locale/uz');
+
+    assert.equal(moment.locale(['../locale/vi']), 'en', 'global setter with array ignores path-like locale');
+    assert.ok(untouched('vi'), 'global setter with array does not load ../locale/vi');
+
+    assert.equal(moment().locale('../locale/tr').locale(), 'en', 'instance setter ignores path-like locale');
+    assert.ok(untouched('tr'), 'instance setter does not load ../locale/tr');
+
+    assert.ok(!moment.localeData('../locale/tzm'), 'localeData returns nothing for path-like locale');
+    assert.ok(untouched('tzm'), 'localeData does not load ../locale/tzm');
+
+    assert.equal(moment.duration({seconds: 44}).locale('..\\locale\\km').locale(), 'en',
+            'duration setter ignores locale with backslashes');
+    assert.ok(untouched('km'), 'duration setter does not load ..\\locale\\km');
+
+    assert.equal(moment.locale(), 'en', 'global locale is unchanged');
+
+    each(planted, function (name) {
+        moment.defineLocale(name, null);
+    });
+    moment.locale('en');
+
+    assert.notEqual(moment.localeData('uz').months(jan), sentinel[0], 'plain locale names are still loaded lazily');
+    assert.equal(moment.locale(), 'en', 'lazy loading a locale does not change the global locale');
+});
+
