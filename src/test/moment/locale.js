@@ -65,6 +65,116 @@ test('library getters and setters', function (assert) {
     assert.equal(moment.locale(), 'en-gb', 'Normalize locale key underscore');
 });
 
+test('preserve exact custom locale names', function (assert) {
+    moment.defineLocale('Mixed_Custom', {months : ['Movember']});
+
+    assert.equal(moment.localeData('Mixed_Custom')._abbr, 'Mixed_Custom',
+            'finds a custom locale before normalizing its name');
+    assert.equal(moment.locale(), 'Mixed_Custom', 'sets a custom locale using its exact name');
+
+    moment.defineLocale('Mixed_Custom', null);
+});
+
+test('do not load invalid built-in locale names', function (assert) {
+    var invalidNames = ['.', '..', 'locale name', 'en@gb'];
+
+    each(invalidNames, function (name) {
+        assert.ok(!moment.localeData(name), 'does not load invalid locale name "' + name + '"');
+    });
+    assert.equal(moment.locale(), 'en', 'global locale is unchanged');
+});
+
+test('do not load locales from crafted non-string names', function (assert) {
+    var jan = moment([2000, 0]),
+        sentinel = 'S1_S2_S3_S4_S5_S6_S7_S8_S9_S10_S11_S12'.split('_'),
+        planted = ['ta', 'th', 'sv', 'sq', 'sk'],
+        payloads = [
+            '../min/locales',
+            '../../../../../../../../../../etc/passwd',
+            '..\\..\\..\\..\\etc\\passwd'
+        ];
+
+    // Satisfies a `name.match(...)` check, survives normalization as a
+    // non-string and stringifies to a path when appended to './locale/'.
+    function craftedName(payload) {
+        var crafted = {
+            match : function () {
+                return true;
+            },
+            toLowerCase : function () {
+                return crafted;
+            },
+            replace : function () {
+                return crafted;
+            },
+            split : function () {
+                // substrings join back into the crafted object, so the
+                // array lookup hands the object itself to the loader too
+                return {
+                    length : 1,
+                    slice : function () {
+                        return {
+                            join : function () {
+                                return crafted;
+                            }
+                        };
+                    }
+                };
+            },
+            toString : function () {
+                return payload;
+            }
+        };
+        return crafted;
+    }
+
+    // Pre-define each target locale with sentinel month names. If a crafted
+    // locale name reaches require(), the real locale file at that path is
+    // executed, which redefines the locale and clobbers the sentinel.
+    each(planted, function (name) {
+        moment.defineLocale(name, {months : sentinel});
+    });
+    moment.locale('en');
+
+    function untouched(name) {
+        return moment.localeData(name).months(jan) === sentinel[0];
+    }
+
+    assert.equal(moment.locale(craftedName('../locale/ta')), 'en', 'global setter ignores crafted locale');
+    assert.ok(untouched('ta'), 'global setter does not load ../locale/ta');
+
+    assert.equal(moment.locale([craftedName('../locale/th')]), 'en', 'global setter with array ignores crafted locale');
+    assert.ok(untouched('th'), 'global setter with array does not load ../locale/th');
+
+    assert.equal(moment().locale(craftedName('../locale/sv')).locale(), 'en', 'instance setter ignores crafted locale');
+    assert.ok(untouched('sv'), 'instance setter does not load ../locale/sv');
+
+    assert.ok(!moment.localeData(craftedName('../locale/sq')), 'localeData returns nothing for crafted locale');
+    assert.ok(untouched('sq'), 'localeData does not load ../locale/sq');
+
+    assert.equal(moment.duration({seconds: 44}).locale(craftedName('../locale/sk')).locale(), 'en',
+            'duration setter ignores crafted locale');
+    assert.ok(untouched('sk'), 'duration setter does not load ../locale/sk');
+
+    each(payloads, function (payload) {
+        moment.locale(craftedName(payload));
+        moment.localeData(craftedName(payload));
+
+        assert.equal(moment.locale(), 'en', 'keeps the global locale for "' + payload + '"');
+        each(planted, function (name) {
+            assert.ok(untouched(name), 'does not require "' + payload + '" (' + name + ' untouched)');
+        });
+    });
+
+    each(planted, function (name) {
+        moment.defineLocale(name, null);
+    });
+    moment.locale('en');
+
+    assert.notEqual(moment.localeData('ta').months(jan), sentinel[0], 'plain locale names are still loaded lazily');
+    assert.equal(moment.locale(), 'en', 'lazy loading a locale does not change the global locale');
+});
+
 test('library setter array of locales', function (assert) {
     assert.equal(moment.locale(['non-existent', 'fr', 'also-non-existent']), 'fr', 'passing an array uses the first valid locale');
     assert.equal(moment.locale(['es', 'fr', 'also-non-existent']), 'es', 'passing an array uses the first valid locale');
