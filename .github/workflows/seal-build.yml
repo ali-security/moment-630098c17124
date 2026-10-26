@@ -1,0 +1,36 @@
+name: seal-build
+
+# Build-and-pack only: the test suite runs on Travis (.travis.yml).
+on:
+  workflow_dispatch:
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Stage the npm package (publisher's file list)
+        run: bash scripts/seal_prepublish.sh
+      - name: Install devDependencies (registry time machine via .npmrc)
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Regenerate min/moment.min.js from moment.js
+        run: |
+          npm install --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/gcli" grunt-cli@0.1.13
+          "$RUNNER_TEMP/gcli/node_modules/.bin/grunt" uglify:main
+          cp min/moment.min.js output_build/min/moment.min.js
+      - name: Pack
+        run: |
+          cd output_build
+          npm pack
+          mkdir -p "$GITHUB_WORKSPACE/seal-dist"
+          mv moment-2.10.2.tgz "$GITHUB_WORKSPACE/seal-dist/"
+          tar tzf "$GITHUB_WORKSPACE/seal-dist/moment-2.10.2.tgz" | wc -l
+      - uses: actions/upload-artifact@v4
+        with:
+          name: moment-npm
+          path: seal-dist/moment-2.10.2.tgz
+          if-no-files-found: error
